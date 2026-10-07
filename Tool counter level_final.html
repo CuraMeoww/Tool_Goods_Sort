@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Level Grid Analytics & Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(51, 65, 85, 0.8);
+            border-radius: 0.75rem;
+        }
+
+        textarea {
+            background-color: #1e293b;
+            color: #10b981;
+            font-family: 'Consolas', monospace;
+        }
+
+            textarea:focus {
+                outline: none;
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+            }
+
+        .stat-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+        }
+
+            .stat-card:hover {
+                border-color: #3b82f6;
+                background: rgba(30, 41, 59, 0.9);
+            }
+
+        /* Visualizer Styles */
+        .shelf-container {
+            background: #1e293b;
+            border: 2px solid #475569;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            position: relative;
+            perspective: 1000px;
+        }
+
+        /* Multi-state Shelf Classes */
+        .shelf-locked {
+            border-color: #e11d48;
+            background: #4c0519;
+        }
+
+        .shelf-chest {
+            border-color: #9333ea;
+            background: #3b0764;
+        }
+
+        .shelf-moving {
+            border-color: #10b981;
+        }
+
+        .shelf-falling-visible {
+            border-color: #22c55e;
+            border-width: 3px;
+        }
+
+        .shelf-falling-hidden {
+            border-color: #64748b;
+            border-style: dashed;
+            opacity: 0.7;
+        }
+
+        /* Handling multiple states visually (e.g., locked + falling) */
+        .shelf-locked.shelf-falling-visible {
+            border-style: solid;
+            border-color: #e11d48;
+            box-shadow: 0 0 8px #22c55e;
+        }
+
+        .shelf-locked.shelf-falling-hidden {
+            border-style: dashed;
+            border-color: #e11d48;
+            opacity: 0.8;
+        }
+
+        .item-slot {
+            width: 40px;
+            height: 40px;
+            background: #334155;
+            border-radius: 0.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: bold;
+            position: absolute;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            user-select: none;
+            color: #fff;
+            text-shadow: 1px 1px 2px black;
+        }
+
+            .item-slot.empty {
+                background: rgba(0,0,0,0.2);
+                border: 1px dashed #475569;
+            }
+
+            .item-slot.highlighted {
+                transform: scale(1.15) translateZ(20px);
+                box-shadow: 0 0 15px currentColor;
+                z-index: 50 !important;
+            }
+
+            .item-slot.dimmed {
+                opacity: 0.1;
+            }
+
+        /* Depth effects for layers (Extended to 10) */
+        .layer-1 {
+            z-index: 10;
+            transform: translate(0, 0);
+        }
+
+        .layer-2 {
+            z-index: 9;
+            transform: translate(4px, -4px);
+            filter: brightness(0.85);
+        }
+
+        .layer-3 {
+            z-index: 8;
+            transform: translate(8px, -8px);
+            filter: brightness(0.7);
+        }
+
+        .layer-4 {
+            z-index: 7;
+            transform: translate(12px, -12px);
+            filter: brightness(0.55);
+        }
+
+        .layer-5 {
+            z-index: 6;
+            transform: translate(16px, -16px);
+            filter: brightness(0.45);
+        }
+
+        .layer-6 {
+            z-index: 5;
+            transform: translate(20px, -20px);
+            filter: brightness(0.35);
+        }
+
+        .layer-7 {
+            z-index: 4;
+            transform: translate(24px, -24px);
+            filter: brightness(0.25);
+        }
+
+        .layer-8 {
+            z-index: 3;
+            transform: translate(28px, -28px);
+            filter: brightness(0.2);
+        }
+
+        .layer-9 {
+            z-index: 2;
+            transform: translate(32px, -32px);
+            filter: brightness(0.15);
+        }
+
+        .layer-10 {
+            z-index: 1;
+            transform: translate(36px, -36px);
+            filter: brightness(0.1);
+        }
+
+        .layer-filter-btn {
+            background: #334155;
+            color: #cbd5e1;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+            .layer-filter-btn:hover {
+                background: #475569;
+            }
+
+            .layer-filter-btn.active {
+                background: #3b82f6;
+                color: white;
+                font-weight: bold;
+            }
+
+        .visualizer-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            padding: 1rem;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 min-h-screen flex flex-col gap-6">
+    <div class="max-w-7xl mx-auto w-full flex flex-col lg:flex-row gap-6">
+
+        <!-- Cột trái: JSON Input -->
+        <div class="w-full lg:w-1/3 flex flex-col gap-4">
+            <div class="glass-panel p-4 flex flex-col h-full">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-sm font-bold tracking-wider text-slate-300"><i class="fa-solid fa-code mr-2 text-blue-400"></i>LEVEL GRID JSON</h2>
+                    <button onclick="loadSample()" class="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-blue-300 transition-colors">Tải Sample Level</button>
+                </div>
+                <textarea id="jsonInput" class="w-full flex-grow rounded p-3 text-sm resize-none" rows="25" placeholder="Dán mã JSON của level vào đây..."></textarea>
+                <button onclick="calculateStats()" class="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg transition-colors">
+                    <i class="fa-solid fa-calculator mr-2"></i> Phân Tích & Mô Phỏng
+                </button>
+            </div>
+        </div>
+
+        <!-- Cột phải: Dashboard kết quả -->
+        <div class="w-full lg:w-2/3 flex flex-col gap-6">
+
+            <!-- Level Info Header -->
+            <div class="glass-panel p-4 flex justify-between items-center bg-gradient-to-r from-slate-800 to-blue-900/40">
+                <div class="flex flex-col gap-1">
+                    <div class="text-xs text-blue-300 uppercase tracking-widest font-bold">Level Name</div>
+                    <div class="flex items-center gap-3">
+                        <div class="text-3xl font-black text-white" id="level_name">---</div>
+                        <div class="bg-slate-700 text-yellow-400 px-3 py-1 rounded-full text-sm font-bold shadow-inner flex items-center border border-slate-600">
+                            <i class="fa-solid fa-clock mr-2"></i>
+                            <span id="level_time_limit">--:--</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-blue-300 uppercase tracking-widest font-bold mb-1">Level Type</div>
+                    <div class="text-2xl font-bold" id="level_type_badge">
+                        <span class="px-3 py-1 rounded bg-slate-700 text-slate-300 text-sm">Unknown</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mục Shelf -->
+            <div class="glass-panel p-5">
+                <h2 class="text-lg font-bold text-blue-400 mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-server mr-2"></i>Shelf Stats</h2>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                    <div class="stat-card p-3">
+                        <div class="text-xs text-slate-400 mb-1">Total Shelves</div>
+                        <div class="text-2xl font-bold" id="total_shelf_count">0</div>
+                    </div>
+                    <div class="stat-card p-3">
+                        <div class="text-xs text-slate-400 mb-1">Normal Shelves <span class="text-[10px] text-gray-500">(Inc. Falling)</span></div>
+                        <div class="text-2xl font-bold text-emerald-400" id="normal_shelf_total">0</div>
+                    </div>
+                    <div class="stat-card p-3">
+                        <div class="text-xs text-slate-400 mb-1">Moving Shelves</div>
+                        <div class="text-2xl font-bold text-emerald-400" id="moving_shelf_total">0</div>
+                    </div>
+                    <div class="stat-card p-3">
+                        <div class="text-xs text-slate-400 mb-1">Layer (Min / Max)</div>
+                        <div class="text-2xl font-bold text-purple-400"><span id="min_layer">0</span> / <span id="max_layer">0</span></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-sm text-slate-400 mb-2">Normal/Falling Shelf Layer Distribution</div>
+                        <div class="flex flex-wrap gap-2 text-xs" id="normal_layer_dist"></div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-slate-400 mb-2">Moving Shelf Layer Distribution</div>
+                        <div class="flex flex-wrap gap-2 text-xs" id="moving_layer_dist"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mục Board & Item + Mục Blocker -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Board & Item Total -->
+                <div class="glass-panel p-5">
+                    <h2 class="text-lg font-bold text-emerald-400 mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-cubes mr-2"></i>Board & Item Total</h2>
+                    <div class="flex flex-col gap-3">
+                        <div class="flex justify-between items-center stat-card p-3">
+                            <span class="text-sm text-slate-300">Total Item Count</span>
+                            <span class="text-xl font-bold" id="total_item_count">0</span>
+                        </div>
+                        <div class="flex justify-between items-center stat-card p-3">
+                            <span class="text-sm text-slate-300">Unique Item (Match-3)</span>
+                            <span class="text-lg font-bold text-blue-300" id="unique_item_count">0</span>
+                        </div>
+                        <div class="flex justify-between items-center stat-card p-3">
+                            <span class="text-sm text-slate-300">Interactable Items</span>
+                            <span class="text-lg font-bold text-green-300" id="interactable_item_count">0</span>
+                        </div>
+                        <div class="flex justify-between items-center stat-card p-3">
+                            <span class="text-sm text-slate-300">Hidden Items</span>
+                            <span class="text-lg font-bold text-yellow-300" id="hidden_item_count">0</span>
+                        </div>
+                        <div class="flex justify-between items-center stat-card p-3">
+                            <span class="text-sm text-slate-300">Available Slots (L1)</span>
+                            <span class="text-lg font-bold text-cyan-300" id="available_slots">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Blockers & Special -->
+                <div class="glass-panel p-5">
+                    <h2 class="text-lg font-bold text-rose-400 mb-4 border-b border-slate-700 pb-2"><i class="fa-solid fa-lock mr-2"></i>Blockers & Special</h2>
+                    <div class="flex flex-col gap-3">
+                        <div class="stat-card p-3 border-l-4 border-purple-500">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-sm font-bold text-purple-300">Mystery Chests</span>
+                                <span class="text-lg font-bold" id="chest_count">0</span>
+                            </div>
+                            <div class="flex justify-between items-center text-xs text-slate-400">
+                                <span>Total Chest Layers:</span>
+                                <span class="font-bold text-purple-200" id="chest_layer">0</span>
+                            </div>
+                        </div>
+
+                        <div class="stat-card p-3 border-l-4 border-rose-500">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-sm font-bold text-rose-300">Locked Shelves</span>
+                                <span class="text-lg font-bold" id="locked_shelf_count">0</span>
+                            </div>
+                            <div class="flex justify-between items-center text-xs text-slate-400 mb-1">
+                                <span>Shelf Item Capacity:</span>
+                                <span class="font-bold text-rose-200" id="shelf_item_capacity">0</span>
+                            </div>
+                            <div class="flex justify-between items-center text-xs text-slate-400">
+                                <span>Unlock Requirements:</span>
+                                <span class="font-bold text-rose-200 bg-rose-900/50 px-2 rounded" id="unlock_shelf_required">-</span>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center stat-card p-3 border-l-4 border-yellow-500">
+                            <span class="text-sm text-yellow-300 font-bold">Special Items (Spc_Obj)</span>
+                            <span class="text-lg font-bold text-yellow-200" id="special_item_count">0</span>
+                        </div>
+
+                        <div class="flex justify-between items-center stat-card p-3 border-l-4 border-teal-500">
+                            <span class="text-sm text-teal-300 font-bold">Hidden Color Items (Hid)</span>
+                            <span class="text-lg font-bold text-teal-200" id="hidden_color_item_count">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Khu vực Visualizer -->
+    <div class="max-w-7xl mx-auto w-full glass-panel flex flex-col p-6 mt-4">
+        <div class="flex flex-col md:flex-row justify-between items-center border-b border-slate-700 pb-4 mb-6">
+            <h2 class="text-2xl font-bold text-blue-300"><i class="fa-solid fa-cube mr-3"></i>Grid Visualizer</h2>
+
+            <div class="flex gap-2 items-center mt-4 md:mt-0">
+                <span class="text-sm text-slate-400 mr-2">Layer Filter:</span>
+                <button class="layer-filter-btn active" onclick="filterLayer('all')" id="btn-layer-all">Tất cả</button>
+                <div id="layer-buttons" class="flex gap-2"></div>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap gap-4 mb-4 text-xs text-slate-400 justify-center">
+            <span class="flex items-center"><div class="w-3 h-3 bg-slate-700 mr-1 rounded"></div> Normal</span>
+            <span class="flex items-center"><div class="w-3 h-3 bg-green-500 mr-1 rounded"></div> Falling (Visible)</span>
+            <span class="flex items-center"><div class="w-3 h-3 border border-dashed border-slate-400 mr-1 rounded"></div> Falling (Hidden)</span>
+            <span class="flex items-center"><div class="w-3 h-3 border border-emerald-500 bg-transparent mr-1 rounded"></div> Moving</span>
+            <span class="flex items-center"><div class="w-3 h-3 bg-rose-900 mr-1 rounded"></div> Locked</span>
+            <span class="flex items-center"><div class="w-3 h-3 bg-purple-900 mr-1 rounded"></div> Chest</span>
+        </div>
+
+        <div class="visualizer-wrapper">
+            <div id="visualizer-container">
+                <div class="text-center text-slate-500 py-10 w-full">Vui lòng nhập JSON và bấm Phân Tích để hiển thị mô phỏng.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+                // Global state
+                let maxGlobalLayer = 0;
+                let colorMap = {};
+
+                function getColorForString(str) {
+                    let hash = 0;
+                    for (let i = 0; i < str.length; i++) {
+                        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+                    }
+                    let h = Math.abs(hash) % 360;
+                    return `hsl(${h}, 70%, 65%)`;
+                }
+
+                function loadSample() {
+                    const sampleData = {
+                      "level": 29,
+                      "time_limit": "05:20",
+                      "shelves": [
+                        { "shelf_id": "C1_1", "is_falling": true, "falling_visible": false, "layers": { "1": [150, 138, 138] } },
+                        { "shelf_id": "C1_2", "is_locked": true, "unlock_required": 4, "is_falling": true, "falling_visible": true, "layers": { "1": [null, 11, 41] } },
+                        { "shelf_id": "C1_3", "layers": { "2": [null, null, "Hid_138"], "1": [null, 18, 18] } },
+                        { "shelf_id": "C2_1", "is_moving": true, "moving_direction": "->", "layers": { "2": [null, "Spc_Obj_1", null], "1": [34, 34, 18] } }
+                      ]
+                    };
+                    document.getElementById('jsonInput').value = JSON.stringify(sampleData, null, 4);
+                    calculateStats();
+                }
+
+                function setVal(id, val) { document.getElementById(id).innerText = val; }
+
+                function calculateStats() {
+                    let jsonText = document.getElementById('jsonInput').value.trim();
+                    if (!jsonText) return alert("Vui lòng nhập JSON!");
+
+                    if (jsonText.startsWith("```json")) jsonText = jsonText.replace(/^```json/i, '');
+                    if (jsonText.startsWith("```")) jsonText = jsonText.replace(/^```/, '');
+                    if (jsonText.endsWith("```")) jsonText = jsonText.replace(/```$/, '');
+                    jsonText = jsonText.trim();
+
+                    try {
+                        const data = JSON.parse(jsonText);
+                        let shelves = data.shelves || [];
+
+                        let hasMoving = shelves.some(s => s.is_moving || (s.moving_direction && typeof s.moving_direction === 'string' && s.moving_direction.trim() !== ""));
+                        let hasFalling = shelves.some(s => s.is_falling);
+                        let levelType = hasMoving ? 3 : (hasFalling ? 2 : 1);
+
+                        let typeText, typeClass;
+                        if (levelType === 3) {
+                            typeText = "Type 3: Dynamic Level";
+                            typeClass = "bg-emerald-600 text-white";
+                        } else if (levelType === 2) {
+                            typeText = "Type 2: Falling Level";
+                            typeClass = "bg-orange-600 text-white";
+                        } else {
+                            typeText = "Type 1: Static Level";
+                            typeClass = "bg-blue-600 text-white";
+                        }
+
+                        setVal("level_name", data.level !== undefined ? "Level " + data.level : "Unknown Level");
+                        setVal("level_time_limit", data.time_limit !== undefined && data.time_limit !== "" ? data.time_limit : "--:--");
+
+                        const badge = document.getElementById("level_type_badge");
+                        badge.innerHTML = `<span class="px-3 py-1 rounded shadow ${typeClass} text-sm">${typeText}</span>`;
+
+                        let stats = {
+                            total_shelf_count: 0, normal_shelf_total: 0, moving_shelf_total: 0, locked_shelf_count: 0,
+                            normal_shelf_layer: {1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0,9:0,10:0}, moving_shelf_layer: {1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0,9:0,10:0},
+                            unique_item_count: 0, total_item_count: 0, interactable_item_count: 0, hidden_item_count: 0,
+                            special_item_count: 0, chest_layer: 0, hidden_color_item_count: 0, available_slots: 0,
+                            min_layer: Infinity, max_layer: 0, chest_count: 0, shelf_item_capacity: 0, unlockMap: {}
+                        };
+
+                        let uniqueSet = new Set();
+                        colorMap = {};
+
+                        shelves.forEach(shelf => {
+                            let isChest = shelf.is_chest === true || shelf.isChest === true;
+                            let isLocked = shelf.is_locked === true || shelf.isLockedShelf === true;
+                            let isMoving = shelf.is_moving === true || (shelf.moving_direction && typeof shelf.moving_direction === 'string' && shelf.moving_direction.trim() !== "");
+                            let isFalling = shelf.is_falling === true;
+                            let fallingVisible = shelf.falling_visible === true;
+
+                            let layers = shelf.layers || {};
+                            let layerKeys = Object.keys(layers).map(Number).sort((a,b)=>a-b);
+                            let maxL = layerKeys.length > 0 ? Math.max(...layerKeys) : 0;
+
+                            if (maxL > 0) {
+                                stats.min_layer = Math.min(stats.min_layer, maxL);
+                                stats.max_layer = Math.max(stats.max_layer, maxL);
+                            }
+
+                            if (isChest) { stats.chest_count++; stats.chest_layer += maxL; }
+                            else if (isLocked) {
+                                stats.locked_shelf_count++;
+                                let req = shelf.unlock_required;
+                                if (req !== undefined) stats.unlockMap[req] = (stats.unlockMap[req] || 0) + 1;
+                            }
+                            else if (isMoving) {
+                                stats.moving_shelf_total++;
+                                if(maxL > 0 && maxL <= 10) stats.moving_shelf_layer[maxL]++;
+                            }
+                            else {
+                                stats.normal_shelf_total++;
+                                if(maxL > 0 && maxL <= 10) stats.normal_shelf_layer[maxL]++;
+                            }
+
+                            let shelfWidth = 0;
+                            layerKeys.forEach(k => { if (layers[k] && layers[k].length > shelfWidth) shelfWidth = layers[k].length; });
+
+                            // Logic tính Available Slots
+                            if (!isLocked && !isChest) {
+                                let canCountSlots = true;
+                                // Đối với Level Falling, chỉ đếm slot trống ở shelf có falling_visible = true
+                                if (levelType === 2 && isFalling && !fallingVisible) {
+                                    canCountSlots = false;
+                                }
+
+                                if (canCountSlots) {
+                                    let l1 = layers["1"] || [];
+                                    for(let i = 0; i < shelfWidth; i++) {
+                                        if (l1[i] === null || l1[i] === undefined || l1[i] === "") stats.available_slots++;
+                                    }
+                                }
+                            }
+
+                            for (let col = 0; col < shelfWidth; col++) {
+                                let topMostFound = false;
+                                for (let i = layerKeys.length - 1; i >= 0; i--) {
+                                    let k = layerKeys[i];
+                                    let item = layers[k][col];
+
+                                    if (item !== null && item !== undefined && item !== "") {
+                                        let strItem = String(item);
+                                        let isSpc = strItem.startsWith("Spc_Obj");
+                                        let isHid = strItem.startsWith("Hid_");
+
+                                        let trueIdStr = strItem;
+                                        if (isHid) {
+                                            trueIdStr = strItem.substring(4);
+                                        }
+
+                                        if (!colorMap[trueIdStr] && !isSpc) colorMap[trueIdStr] = getColorForString(trueIdStr);
+                                        if (!colorMap[strItem]) colorMap[strItem] = colorMap[trueIdStr] || getColorForString(strItem);
+
+                                        if (!isSpc && !isHid) uniqueSet.add(item);
+                                        else if(isHid) uniqueSet.add(trueIdStr);
+
+                                        if (isSpc) stats.special_item_count++;
+                                        if (isHid) stats.hidden_color_item_count++;
+
+                                        if (isLocked) {
+                                            stats.shelf_item_capacity++;
+                                        } else if (!isChest) {
+                                            if (!isSpc && !isHid) {
+                                                let canBeInteractable = true;
+                                                if (levelType === 2 && isFalling && !fallingVisible) canBeInteractable = false;
+
+                                                if (canBeInteractable && !topMostFound) stats.interactable_item_count++;
+                                                else stats.hidden_item_count++;
+                                            }
+                                        }
+                                        topMostFound = true;
+                                    }
+                                }
+                            }
+                        });
+
+                        maxGlobalLayer = stats.max_layer;
+                        stats.unique_item_count = uniqueSet.size;
+                        stats.total_shelf_count = stats.normal_shelf_total + stats.moving_shelf_total + stats.locked_shelf_count;
+                        stats.total_item_count = stats.interactable_item_count + stats.hidden_item_count + stats.special_item_count + stats.chest_layer + stats.hidden_color_item_count + stats.shelf_item_capacity;
+                        if (stats.min_layer === Infinity) stats.min_layer = 0;
+
+                        let unlockStrArr = [];
+                        for (const [req, count] of Object.entries(stats.unlockMap)) unlockStrArr.push(`${count}:${req}`);
+
+                        setVal("total_shelf_count", stats.total_shelf_count);
+                        setVal("normal_shelf_total", stats.normal_shelf_total);
+                        setVal("moving_shelf_total", stats.moving_shelf_total);
+                        setVal("min_layer", stats.min_layer);
+                        setVal("max_layer", stats.max_layer);
+                        setVal("total_item_count", stats.total_item_count);
+                        setVal("unique_item_count", stats.unique_item_count);
+                        setVal("interactable_item_count", stats.interactable_item_count);
+                        setVal("hidden_item_count", stats.hidden_item_count);
+                        setVal("available_slots", stats.available_slots);
+                        setVal("chest_count", stats.chest_count);
+                        setVal("chest_layer", stats.chest_layer);
+                        setVal("locked_shelf_count", stats.locked_shelf_count);
+                        setVal("shelf_item_capacity", stats.shelf_item_capacity);
+                        setVal("unlock_shelf_required", unlockStrArr.length > 0 ? unlockStrArr.join(" , ") : "Không có");
+                        setVal("special_item_count", stats.special_item_count);
+                        setVal("hidden_color_item_count", stats.hidden_color_item_count);
+
+                        let normHtml = "", movHtml = "";
+                        for(let i=1; i<=10; i++) {
+                            normHtml += `<span class="bg-slate-700 px-2 py-1 rounded">L${i}: <b class="text-white">${stats.normal_shelf_layer[i]}</b></span>`;
+                            movHtml += `<span class="bg-slate-700 px-2 py-1 rounded">L${i}: <b class="text-white">${stats.moving_shelf_layer[i]}</b></span>`;
+                        }
+                        document.getElementById('normal_layer_dist').innerHTML = normHtml;
+                        document.getElementById('moving_layer_dist').innerHTML = movHtml;
+
+                        renderVisualizer(shelves);
+
+                    } catch (error) {
+                        alert("Lỗi không thể đọc được JSON.\nChi tiết lỗi: " + error.message + "\n\nHãy đảm bảo bạn đã copy toàn bộ mã.");
+                        console.error(error);
+                    }
+                }
+
+                function renderVisualizer(shelves) {
+                    const container = document.getElementById('visualizer-container');
+                    container.innerHTML = "";
+
+                    let maxCol = 1, maxRow = 1;
+                    let hasGrid = false;
+
+                    shelves.forEach(shelf => {
+                        let col = null, row = null;
+                        let posStr = shelf.position || String(shelf.shelf_id) || "";
+
+                        let matchC = posStr.match(/^C(\d+)_(\d+)/i);
+                        if (matchC) { col = parseInt(matchC[1]); row = parseInt(matchC[2]); }
+
+                        let matchR = posStr.match(/row_(\d+)_col_(\d+)/i);
+                        if (matchR) { row = parseInt(matchR[1]); col = parseInt(matchR[2]); }
+
+                        if (col !== null && row !== null) {
+                            shelf.gridCol = col;
+                            shelf.gridRow = row;
+                            maxCol = Math.max(maxCol, col);
+                            maxRow = Math.max(maxRow, row);
+                            hasGrid = true;
+                        }
+                    });
+
+                    if (hasGrid) {
+                        container.style.display = 'grid';
+                        container.style.gridTemplateColumns = `repeat(${maxCol}, max-content)`;
+                        container.style.justifyContent = 'center';
+                        container.style.gap = '0.75rem';
+                    } else {
+                        container.style.display = 'flex';
+                        container.style.flexWrap = 'wrap';
+                        container.style.justifyContent = 'center';
+                        container.style.gap = '1.5rem';
+                        container.style.gridTemplateColumns = '';
+                    }
+
+                    const layerBtns = document.getElementById('layer-buttons');
+                    layerBtns.innerHTML = "";
+                    for (let i = 1; i <= maxGlobalLayer; i++) {
+                        layerBtns.innerHTML += `<button class="layer-filter-btn" onclick="filterLayer(${i})" id="btn-layer-${i}">Lớp ${i}</button>`;
+                    }
+
+                    shelves.forEach((shelf, index) => {
+                        let layers = shelf.layers || {};
+                        let layerKeys = Object.keys(layers).map(Number).sort((a,b)=>a-b);
+                        let shelfWidth = 0;
+                        layerKeys.forEach(k => { if (layers[k] && layers[k].length > shelfWidth) shelfWidth = layers[k].length; });
+
+                        if (shelfWidth === 0) return;
+
+                        let div = document.createElement('div');
+                        div.className = 'shelf-container';
+                        div.style.width = `${(shelfWidth * 40) + (shelfWidth-1)*8 + 16}px`;
+                        div.style.height = `60px`;
+
+                        if (hasGrid && shelf.gridCol && shelf.gridRow) {
+                            div.style.gridColumn = shelf.gridCol;
+                            div.style.gridRow = shelf.gridRow;
+                        }
+
+                        // Handle multi-state classes
+                        if (shelf.is_chest) div.classList.add('shelf-chest');
+                        if (shelf.is_moving) div.classList.add('shelf-moving');
+                        if (shelf.is_locked) div.classList.add('shelf-locked');
+
+                        if (shelf.is_falling) {
+                            if (shelf.falling_visible) div.classList.add('shelf-falling-visible');
+                            else div.classList.add('shelf-falling-hidden');
+                        }
+
+                        for (let col = 0; col < shelfWidth; col++) {
+                            for (let l = 1; l <= maxGlobalLayer; l++) {
+                                let itemRaw = (layers[l] && layers[l][col] !== undefined) ? layers[l][col] : null;
+
+                                let slot = document.createElement('div');
+                                slot.className = `item-slot layer-${l} ui-layer-${l}`;
+                                slot.style.left = `${8 + col * 48}px`;
+                                slot.style.top = `10px`;
+
+                                if (itemRaw !== null && itemRaw !== "") {
+                                    let strItem = String(itemRaw);
+                                    let isHid = strItem.startsWith("Hid_");
+
+                                    let displayStr = strItem;
+                                    let trueId = strItem;
+
+                                    if (isHid) {
+                                        trueId = strItem.substring(4);
+                                        displayStr = trueId;
+                                    }
+
+                                    let shortName = displayStr.length > 4 ? displayStr.substring(0,3) + "." : displayStr;
+                                    slot.innerText = shortName;
+
+                                    // Visual cue for hidden items
+                                    if (isHid) {
+                                        slot.style.border = '2px dashed #eab308';
+                                        slot.style.color = '#eab308';
+                                    } else {
+                                        slot.style.color = colorMap[strItem];
+                                    }
+
+                                    // Highlight matches based on the TRUE ID so they glow together
+                                    slot.setAttribute('data-id', trueId);
+
+                                    slot.addEventListener('mouseenter', () => highlightId(trueId));
+                                    slot.addEventListener('mouseleave', () => removeHighlight());
+                                } else {
+                                    slot.classList.add('empty');
+                                }
+                                div.appendChild(slot);
+                            }
+                        }
+
+                        let label = document.createElement('div');
+                        label.className = "absolute -bottom-5 left-0 w-full text-center text-[10px] text-slate-500 font-mono";
+                        label.innerText = shelf.shelf_id || `S${index+1}`;
+                        div.appendChild(label);
+
+                        container.appendChild(div);
+                    });
+                }
+
+                function highlightId(id) {
+                    document.querySelectorAll('.item-slot').forEach(el => {
+                        if (el.classList.contains('empty')) return;
+                        if (el.getAttribute('data-id') === id) el.classList.add('highlighted');
+                        else el.classList.add('dimmed');
+                    });
+                }
+
+                function removeHighlight() {
+                    document.querySelectorAll('.item-slot').forEach(el => {
+                        el.classList.remove('highlighted', 'dimmed');
+                    });
+                }
+
+                function filterLayer(layer) {
+                    document.querySelectorAll('.layer-filter-btn').forEach(b => b.classList.remove('active'));
+                    document.getElementById(`btn-layer-${layer}`).classList.add('active');
+
+                    for (let l = 1; l <= 10; l++) {
+                        document.querySelectorAll(`.ui-layer-${l}`).forEach(el => {
+                            if (layer === 'all' || layer === l) el.style.display = 'flex';
+                            else el.style.display = 'none';
+                        });
+                    }
+                }
+
+                window.onload = loadSample;
+    </script>
+</body>
+</html>
